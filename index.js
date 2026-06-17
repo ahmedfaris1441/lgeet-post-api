@@ -5,9 +5,15 @@ app.use(express.json({ limit: '50mb' }));
 
 async function renderPage(browser, url) {
   const page = await browser.newPage();
-  await page.setViewport({ width: 1200, height: 1200 });
+
+  // 600px بالضبط = scale يصير 1 = نفس المتصفح
+  await page.setViewport({ width: 600, height: 900, deviceScaleFactor: 1 });
+
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
-  
+
+  // انتظر الخطوط أولاً
+  await page.evaluate(() => document.fonts.ready);
+
   // انتظر الصور
   await page.evaluate(() => new Promise((resolve) => {
     const imgs = document.querySelectorAll('img');
@@ -18,13 +24,10 @@ async function renderPage(browser, url) {
       else { img.onload = img.onerror = () => { loaded++; if (loaded === imgs.length) resolve(); }; }
     });
   }));
-  
-  // انتظر الخطوط
-  await page.evaluate(() => document.fonts.ready);
-  
-  // انتظر إضافي
-  await new Promise(r => setTimeout(r, 3000));
-  
+
+  // انتظر إضافي للـ CSS pseudo-elements والـ render الكامل
+  await new Promise(r => setTimeout(r, 4000));
+
   const base64 = await page.evaluate(() => window.exportPost());
   await page.close();
   return base64;
