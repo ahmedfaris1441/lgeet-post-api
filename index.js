@@ -5,15 +5,11 @@ app.use(express.json({ limit: '50mb' }));
 
 async function renderPage(browser, url) {
   const page = await browser.newPage();
-
-  // مهم: نفس حجم الـ post بالضبط عشان scalePost() يرجع scale=1
   await page.setViewport({ width: 600, height: 600, deviceScaleFactor: 1 });
-
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
 
-  // نوقف الـ scalePost عشان ما يغير الـ transform
+  // نوقف الـ scale عشان ما يغير الـ transform
   await page.evaluate(() => {
-    window.removeEventListener('resize', window.scalePost);
     const post = document.getElementById('post');
     if (post) {
       post.style.transform = 'none';
@@ -43,15 +39,13 @@ async function renderPage(browser, url) {
     });
   }));
 
-  // حل مشكلة ::before — نحول كل .info-feat::before لـ span حقيقي
+  // حل مشكلة ::before
   await page.evaluate(() => {
-    document.querySelectorAll('.info-feat').forEach(el => {
-      // امسح الـ ::before الأصلي
-      const style = document.createElement('style');
-      style.textContent = '.info-feat::before { display: none !important; }';
-      document.head.appendChild(style);
+    const style = document.createElement('style');
+    style.textContent = '.info-feat::before { display: none !important; }';
+    document.head.appendChild(style);
 
-      // أضيف span حقيقي
+    document.querySelectorAll('.info-feat').forEach(el => {
       const span = document.createElement('span');
       span.textContent = '✓';
       span.style.cssText = 'color:#7fa8ff;font-size:11px;font-weight:900;font-family:Cairo,sans-serif;margin-right:2px;';
@@ -59,7 +53,6 @@ async function renderPage(browser, url) {
     });
   });
 
-  // انتظر إضافي للـ render الكامل
   await new Promise(r => setTimeout(r, 3000));
 
   const base64 = await page.evaluate(() => window.exportPost());
@@ -87,8 +80,9 @@ app.post('/generate-post', async (req, res) => {
       `&feat3=${encodeURIComponent(feature3 || '')}` +
       `&image=${encodeURIComponent(image || '')}`;
 
-    const instagramBase64 = await renderPage(browser, `${baseUrl}/lgeet-temp-instagram.html?${query}`);
-    const tiktokBase64 = await renderPage(browser, `${baseUrl}/lgeet-temp-tiktok.html?${query}`);
+    // بدون .html
+    const instagramBase64 = await renderPage(browser, `${baseUrl}/lgeet-temp-instagram?${query}`);
+    const tiktokBase64 = await renderPage(browser, `${baseUrl}/lgeet-temp-tiktok?${query}`);
 
     await browser.close();
 
