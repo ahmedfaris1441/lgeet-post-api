@@ -8,15 +8,31 @@ async function renderPage(browser, url) {
   await page.setViewport({ width: 600, height: 900, deviceScaleFactor: 1 });
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
 
-  // انتظر كل الخطوط
+  // نجبر الخطوط تتحمل عن طريق render نص invisible
   await page.evaluate(async () => {
+    // إنشاء element مخفي يستخدم كل أوزان الخط
+    const el = document.createElement('div');
+    el.style.cssText = 'position:absolute;opacity:0;pointer-events:none;font-family:Cairo,sans-serif;';
+    el.innerHTML = `
+      <span style="font-weight:400">✓ test</span>
+      <span style="font-weight:600">✓ test</span>
+      <span style="font-weight:700">✓ test</span>
+      <span style="font-weight:900">✓ test</span>
+    `;
+    document.body.appendChild(el);
+
+    // انتظر الخطوط
     await document.fonts.ready;
-    await document.fonts.load('900 16px Cairo');
-    await document.fonts.load('700 16px Cairo');
-    await document.fonts.load('600 16px Cairo');
-    await document.fonts.load('400 16px Cairo');
-    await document.fonts.load('700 16px Noto Naskh Arabic');
-    await document.fonts.load('400 16px Noto Naskh Arabic');
+    await Promise.all([
+      document.fonts.load('400 16px Cairo'),
+      document.fonts.load('600 16px Cairo'),
+      document.fonts.load('700 16px Cairo'),
+      document.fonts.load('900 16px Cairo'),
+      document.fonts.load('400 16px Noto Naskh Arabic'),
+      document.fonts.load('700 16px Noto Naskh Arabic'),
+    ]);
+
+    document.body.removeChild(el);
   });
 
   // انتظر الصور
@@ -30,7 +46,7 @@ async function renderPage(browser, url) {
     });
   }));
 
-  // انتظر إضافي للـ render الكامل
+  // انتظر إضافي
   await new Promise(r => setTimeout(r, 5000));
 
   const base64 = await page.evaluate(() => window.exportPost());
