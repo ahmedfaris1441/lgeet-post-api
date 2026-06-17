@@ -8,31 +8,15 @@ async function renderPage(browser, url) {
   await page.setViewport({ width: 600, height: 900, deviceScaleFactor: 1 });
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
 
-  // نجبر الخطوط تتحمل عن طريق render نص invisible
+  // انتظر الخطوط
   await page.evaluate(async () => {
-    // إنشاء element مخفي يستخدم كل أوزان الخط
-    const el = document.createElement('div');
-    el.style.cssText = 'position:absolute;opacity:0;pointer-events:none;font-family:Cairo,sans-serif;';
-    el.innerHTML = `
-      <span style="font-weight:400">✓ test</span>
-      <span style="font-weight:600">✓ test</span>
-      <span style="font-weight:700">✓ test</span>
-      <span style="font-weight:900">✓ test</span>
-    `;
-    document.body.appendChild(el);
-
-    // انتظر الخطوط
     await document.fonts.ready;
     await Promise.all([
       document.fonts.load('400 16px Cairo'),
       document.fonts.load('600 16px Cairo'),
       document.fonts.load('700 16px Cairo'),
       document.fonts.load('900 16px Cairo'),
-      document.fonts.load('400 16px Noto Naskh Arabic'),
-      document.fonts.load('700 16px Noto Naskh Arabic'),
     ]);
-
-    document.body.removeChild(el);
   });
 
   // انتظر الصور
@@ -46,8 +30,22 @@ async function renderPage(browser, url) {
     });
   }));
 
-  // انتظر إضافي
-  await new Promise(r => setTimeout(r, 5000));
+  // حل مشكلة ::before — نحول كل .info-feat::before لـ span حقيقي
+  await page.evaluate(() => {
+    document.querySelectorAll('.info-feat').forEach(el => {
+      const span = document.createElement('span');
+      span.textContent = '✓';
+      span.style.cssText = 'color:#7fa8ff;font-size:11px;font-weight:900;font-family:Cairo,sans-serif;';
+      el.appendChild(span);
+    });
+
+    // أخفي الـ ::before الأصلي عشان ما يتكرر
+    const style = document.createElement('style');
+    style.textContent = '.info-feat::before { display: none !important; }';
+    document.head.appendChild(style);
+  });
+
+  await new Promise(r => setTimeout(r, 3000));
 
   const base64 = await page.evaluate(() => window.exportPost());
   await page.close();
