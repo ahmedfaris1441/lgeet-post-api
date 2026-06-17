@@ -5,8 +5,21 @@ app.use(express.json({ limit: '50mb' }));
 
 async function renderPage(browser, url) {
   const page = await browser.newPage();
-  await page.setViewport({ width: 600, height: 900, deviceScaleFactor: 1 });
+
+  // مهم: نفس حجم الـ post بالضبط عشان scalePost() يرجع scale=1
+  await page.setViewport({ width: 600, height: 600, deviceScaleFactor: 1 });
+
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
+
+  // نوقف الـ scalePost عشان ما يغير الـ transform
+  await page.evaluate(() => {
+    window.removeEventListener('resize', window.scalePost);
+    const post = document.getElementById('post');
+    if (post) {
+      post.style.transform = 'none';
+      post.style.marginBottom = '0';
+    }
+  });
 
   // انتظر الخطوط
   await page.evaluate(async () => {
@@ -33,18 +46,20 @@ async function renderPage(browser, url) {
   // حل مشكلة ::before — نحول كل .info-feat::before لـ span حقيقي
   await page.evaluate(() => {
     document.querySelectorAll('.info-feat').forEach(el => {
+      // امسح الـ ::before الأصلي
+      const style = document.createElement('style');
+      style.textContent = '.info-feat::before { display: none !important; }';
+      document.head.appendChild(style);
+
+      // أضيف span حقيقي
       const span = document.createElement('span');
       span.textContent = '✓';
-      span.style.cssText = 'color:#7fa8ff;font-size:11px;font-weight:900;font-family:Cairo,sans-serif;';
-      el.appendChild(span);
+      span.style.cssText = 'color:#7fa8ff;font-size:11px;font-weight:900;font-family:Cairo,sans-serif;margin-right:2px;';
+      el.insertBefore(span, el.firstChild);
     });
-
-    // أخفي الـ ::before الأصلي عشان ما يتكرر
-    const style = document.createElement('style');
-    style.textContent = '.info-feat::before { display: none !important; }';
-    document.head.appendChild(style);
   });
 
+  // انتظر إضافي للـ render الكامل
   await new Promise(r => setTimeout(r, 3000));
 
   const base64 = await page.evaluate(() => window.exportPost());
