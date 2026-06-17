@@ -5,14 +5,19 @@ app.use(express.json({ limit: '50mb' }));
 
 async function renderPage(browser, url) {
   const page = await browser.newPage();
-
-  // 600px بالضبط = scale يصير 1 = نفس المتصفح
   await page.setViewport({ width: 600, height: 900, deviceScaleFactor: 1 });
-
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
 
-  // انتظر الخطوط أولاً
-  await page.evaluate(() => document.fonts.ready);
+  // انتظر كل الخطوط
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await document.fonts.load('900 16px Cairo');
+    await document.fonts.load('700 16px Cairo');
+    await document.fonts.load('600 16px Cairo');
+    await document.fonts.load('400 16px Cairo');
+    await document.fonts.load('700 16px Noto Naskh Arabic');
+    await document.fonts.load('400 16px Noto Naskh Arabic');
+  });
 
   // انتظر الصور
   await page.evaluate(() => new Promise((resolve) => {
@@ -25,8 +30,8 @@ async function renderPage(browser, url) {
     });
   }));
 
-  // انتظر إضافي للـ CSS pseudo-elements والـ render الكامل
-  await new Promise(r => setTimeout(r, 4000));
+  // انتظر إضافي للـ render الكامل
+  await new Promise(r => setTimeout(r, 5000));
 
   const base64 = await page.evaluate(() => window.exportPost());
   await page.close();
@@ -36,7 +41,7 @@ async function renderPage(browser, url) {
 app.post('/generate-post', async (req, res) => {
   try {
     const { image, name, feature1, feature2, feature3, price } = req.body;
-    
+
     console.log('REQUEST BODY:', { image, name, price, feature1, feature2, feature3 });
 
     const browser = await puppeteer.launch({
