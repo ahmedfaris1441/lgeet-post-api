@@ -8,16 +8,7 @@ async function renderPage(browser, url) {
   await page.setViewport({ width: 600, height: 600, deviceScaleFactor: 1 });
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
 
-  // نوقف الـ scale عشان ما يغير الـ transform
-  await page.evaluate(() => {
-    const post = document.getElementById('post');
-    if (post) {
-      post.style.transform = 'none';
-      post.style.marginBottom = '0';
-    }
-  });
-
-  // انتظر الخطوط
+  // 1. انتظر الخطوط بما فيها Noto Naskh للواترمارك
   await page.evaluate(async () => {
     await document.fonts.ready;
     await Promise.all([
@@ -25,35 +16,54 @@ async function renderPage(browser, url) {
       document.fonts.load('600 16px Cairo'),
       document.fonts.load('700 16px Cairo'),
       document.fonts.load('900 16px Cairo'),
-    ]);
+      document.fonts.load('400 16px "Noto Naskh Arabic"'),
+      document.fonts.load('700 16px "Noto Naskh Arabic"'),
+    ]).catch(() => {});
   });
 
-  // انتظر الصور
+  // 2. انتظر كل الصور بما فيها الواترمارك SVG
   await page.evaluate(() => new Promise((resolve) => {
     const imgs = document.querySelectorAll('img');
     if (imgs.length === 0) return resolve();
     let loaded = 0;
+    const done = () => { loaded++; if (loaded === imgs.length) resolve(); };
     imgs.forEach(img => {
-      if (img.complete) { loaded++; if (loaded === imgs.length) resolve(); }
-      else { img.onload = img.onerror = () => { loaded++; if (loaded === imgs.length) resolve(); }; }
+      if (img.complete && img.naturalWidth > 0) done();
+      else { img.onload = done; img.onerror = done; }
     });
   }));
 
-  // حل مشكلة ::before
+  // 3. حل مشكلة ::before — نعمل override لـ exportPost عشان نضيف الـ ✓ قبل html2canvas
   await page.evaluate(() => {
-    const style = document.createElement('style');
-    style.textContent = '.info-feat::before { display: none !important; }';
-    document.head.appendChild(style);
+    const originalExport = window.exportPost;
+    window.exportPost = async function() {
+      // أخفي ::before وأضيف span حقيقي
+      const styleEl = document.createElement('style');
+      styleEl.id = 'fix-before';
+      styleEl.textContent = '.info-feat::before { display: none !important; }';
+      document.head.appendChild(styleEl);
 
-    document.querySelectorAll('.info-feat').forEach(el => {
-      const span = document.createElement('span');
-      span.textContent = '✓';
-      span.style.cssText = 'color:#7fa8ff;font-size:11px;font-weight:900;font-family:Cairo,sans-serif;margin-right:2px;';
-      el.insertBefore(span, el.firstChild);
-    });
+      document.querySelectorAll('.info-feat').forEach(el => {
+        if (el.querySelector('.check-span')) return;
+        const span = document.createElement('span');
+        span.className = 'check-span';
+        span.textContent = '✓';
+        span.style.cssText = 'color:#7fa8ff;font-size:11px;font-weight:900;font-family:Cairo,sans-serif;margin-right:3px;';
+        el.insertBefore(span, el.firstChild);
+      });
+
+      const result = await originalExport.call(this);
+
+      // نظّف بعد الـ export
+      document.getElementById('fix-before')?.remove();
+      document.querySelectorAll('.check-span').forEach(s => s.remove());
+
+      return result;
+    };
   });
 
-  await new Promise(r => setTimeout(r, 3000));
+  // 4. انتظر إضافي للـ render الكامل
+  await new Promise(r => setTimeout(r, 4000));
 
   const base64 = await page.evaluate(() => window.exportPost());
   await page.close();
@@ -80,7 +90,6 @@ app.post('/generate-post', async (req, res) => {
       `&feat3=${encodeURIComponent(feature3 || '')}` +
       `&image=${encodeURIComponent(image || '')}`;
 
-    // بدون .html
     const instagramBase64 = await renderPage(browser, `${baseUrl}/lgeet-temp-instagram?${query}`);
     const tiktokBase64 = await renderPage(browser, `${baseUrl}/lgeet-temp-tiktok?${query}`);
 
