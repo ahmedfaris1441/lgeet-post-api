@@ -15,6 +15,16 @@ async function renderPage(browser, url) {
     const timeout = setTimeout(resolve, 10000);
     Promise.all([
       document.fonts.ready,
+      // تحميل Noto Naskh Arabic صراحةً للواترمارك
+      new Promise(r => {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap';
+        link.onload = r;
+        link.onerror = r;
+        document.head.appendChild(link);
+        setTimeout(r, 3000);
+      }),
       new Promise(r => {
         const imgs = document.querySelectorAll('img');
         if (imgs.length === 0) return r();
@@ -28,11 +38,18 @@ async function renderPage(browser, url) {
     ]).then(() => { clearTimeout(timeout); resolve(); }).catch(resolve);
   }));
 
+  // انتظر إضافي للخطوط
+  await page.evaluate(async () => {
+    try {
+      await document.fonts.load('400 16px "Noto Naskh Arabic"');
+      await document.fonts.load('700 16px "Noto Naskh Arabic"');
+    } catch(e) {}
+  });
+
   await page.evaluate(() => {
     const original = window.exportPost;
     window.exportPost = async function() {
 
-      // احفظ بيانات مهمة قبل الـ export
       const productImg = document.querySelector('#product-zone img');
       const productSrc = productImg ? productImg.src : null;
       const wmSrc = document.getElementById('watermark-img')?.src || null;
@@ -55,26 +72,22 @@ async function renderPage(browser, url) {
         el.insertBefore(svg, el.firstChild);
       });
 
-      // خفي صورة المنتج مؤقتاً عشان html2canvas ما يرسمها غلط
+      // خفي صورة المنتج مؤقتاً
       if (productImg) productImg.style.visibility = 'hidden';
 
-      // شغّل الـ exportPost الأصلي (بدون صورة المنتج)
       const result = await original.call(this);
 
-      // رجّع الصورة
       if (productImg) productImg.style.visibility = '';
-
-      // تنظيف
       document.getElementById('fix-before')?.remove();
       document.querySelectorAll('.check-svg').forEach(s => s.remove());
 
-      // الحين ارسم كل شي يدوياً على canvas نهائي
+      // Canvas نهائي
       const finalCanvas = document.createElement('canvas');
       finalCanvas.width = 2400;
       finalCanvas.height = 2400;
       const ctx = finalCanvas.getContext('2d');
 
-      // 1. ارسم الـ html2canvas result (بدون صورة المنتج)
+      // 1. ارسم الـ base (html2canvas result)
       await new Promise(resolve => {
         const base = new Image();
         base.onload = () => { ctx.drawImage(base, 0, 0); resolve(); };
@@ -82,28 +95,23 @@ async function renderPage(browser, url) {
         base.src = result;
       });
 
-      // 2. ارسم صورة المنتج يدوياً في المنتصف بحجم صح
+      // 2. ارسم صورة المنتج يدوياً
       if (productSrc) {
         await new Promise(resolve => {
           const img = new Image();
           img.crossOrigin = 'anonymous';
           img.onload = () => {
-            // product-zone: top:50% left:50% width:400px height:400px
-            // scale:4 → 1600x1600, centered at (1200,1200)
             const s = 4;
-            const zoneSize = 400 * s; // 1600
-            const cx = 300 * s; // 1200
-            const cy = 300 * s; // 1200
-            const zoneX = cx - zoneSize / 2; // 400
-            const zoneY = cy - zoneSize / 2; // 400
-
-            // object-fit: contain
+            const zoneSize = 400 * s;
+            const cx = 300 * s;
+            const cy = 300 * s;
+            const zoneX = cx - zoneSize / 2;
+            const zoneY = cy - zoneSize / 2;
             const ratio = Math.min(zoneSize / img.naturalWidth, zoneSize / img.naturalHeight);
             const dw = img.naturalWidth * ratio;
             const dh = img.naturalHeight * ratio;
             const dx = zoneX + (zoneSize - dw) / 2;
             const dy = zoneY + (zoneSize - dh) / 2;
-
             ctx.drawImage(img, dx, dy, dw, dh);
             resolve();
           };
@@ -112,8 +120,17 @@ async function renderPage(browser, url) {
         });
       }
 
-      // 3. ارسم الواترمارك يدوياً
+      // 3. ارسم الواترمارك — نرسمه مرتين عشان الخط يتحمل
       if (wmSrc) {
+        // أول مرة للتحميل
+        await new Promise(resolve => {
+          const wm = new Image();
+          wm.onload = () => resolve();
+          wm.onerror = resolve;
+          wm.src = wmSrc;
+        });
+
+        // ثاني مرة للرسم الفعلي
         await new Promise(resolve => {
           const wm = new Image();
           wm.onload = () => {
@@ -133,7 +150,7 @@ async function renderPage(browser, url) {
     };
   });
 
-  await new Promise(r => setTimeout(r, 3000));
+  await new Promise(r => setTimeout(r, 4000));
 
   const base64 = await page.evaluate(() => window.exportPost(), { timeout: 90000 });
   await page.close();
