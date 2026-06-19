@@ -28,32 +28,32 @@ async function renderPage(browser, url) {
     ]).then(() => { clearTimeout(timeout); resolve(); }).catch(resolve);
   }));
 
-  // Override exportPost
   await page.evaluate(() => {
     const original = window.exportPost;
     window.exportPost = async function() {
 
-      // 1. أصلح صورة المنتج — نحول الـ img لـ canvas قبل html2canvas
+      // 1. حول صورة المنتج لـ base64 محلي عشان html2canvas يشوفها
       const productImg = document.querySelector('#product-zone img');
       if (productImg && productImg.src && !productImg.src.startsWith('data:')) {
         await new Promise((resolve) => {
-          const tempCanvas = document.createElement('canvas');
-          const ctx = tempCanvas.getContext('2d');
+          const c = document.createElement('canvas');
           const img = new Image();
           img.crossOrigin = 'anonymous';
           img.onload = () => {
-            tempCanvas.width = img.naturalWidth;
-            tempCanvas.height = img.naturalHeight;
-            ctx.drawImage(img, 0, 0);
-            productImg.src = tempCanvas.toDataURL('image/png');
+            c.width = img.naturalWidth;
+            c.height = img.naturalHeight;
+            c.getContext('2d').drawImage(img, 0, 0);
+            try { productImg.src = c.toDataURL('image/png'); } catch(e){}
             resolve();
           };
           img.onerror = resolve;
-          img.src = productImg.src;
+          img.src = productImg.src + (productImg.src.includes('?') ? '&' : '?') + 't=' + Date.now();
         });
+        // انتظر إضافي للصورة تتحدث
+        await new Promise(r => setTimeout(r, 500));
       }
 
-      // 2. أصلح الـ ✓ — SVG بدل pseudo-element
+      // 2. أصلح الـ ✓
       const styleEl = document.createElement('style');
       styleEl.id = 'fix-before';
       styleEl.textContent = '.info-feat::before { display: none !important; }';
@@ -71,11 +71,49 @@ async function renderPage(browser, url) {
         el.insertBefore(svg, el.firstChild);
       });
 
+      // 3. احفظ الواترمارك src قبل ما exportPost يخفيه
+      const wmEl = document.getElementById('watermark-img');
+      const wmSrc = wmEl ? wmEl.src : null;
+
+      // 4. شغّل الـ exportPost الأصلي
       const result = await original.call(this);
 
       // تنظيف
       document.getElementById('fix-before')?.remove();
       document.querySelectorAll('.check-svg').forEach(s => s.remove());
+
+      // 5. أضيف الواترمارك يدوياً على الـ canvas النهائي
+      if (wmSrc && result) {
+        const finalCanvas = document.createElement('canvas');
+        finalCanvas.width = 2400;
+        finalCanvas.height = 2400;
+        const ctx = finalCanvas.getContext('2d');
+
+        // ارسم الصورة الأصلية
+        await new Promise(resolve => {
+          const base = new Image();
+          base.onload = () => { ctx.drawImage(base, 0, 0); resolve(); };
+          base.onerror = resolve;
+          base.src = result;
+        });
+
+        // ارسم الواترمارك
+        await new Promise(resolve => {
+          const wm = new Image();
+          wm.onload = () => {
+            const s = 4;
+            ctx.save();
+            ctx.globalAlpha = 0.07;
+            ctx.drawImage(wm, (300-202)*s, (300-128.5)*s, 540*s, 439*s);
+            ctx.restore();
+            resolve();
+          };
+          wm.onerror = resolve;
+          wm.src = wmSrc;
+        });
+
+        return finalCanvas.toDataURL('image/png');
+      }
 
       return result;
     };
