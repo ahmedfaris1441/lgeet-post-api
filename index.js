@@ -3,6 +3,58 @@ const puppeteer = require('puppeteer');
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 
+// الـ SVG الأصلي للواترمارك
+const WATERMARK_SVG = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 884 718" width="884" height="718">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap');
+    tspan { white-space:pre }
+    .t0 { font-size: 150px;fill: #d2d2d2;font-weight: 400;font-family: "Noto Naskh Arabic", serif }
+  </style>
+  <text id="لگيت" style="transform: matrix(1.001,.003,-0.003,.895,-72.825,236.134)">
+    <tspan x="245.4" y="0" class="t0">لگيت
+</tspan>
+  </text>
+</svg>`;
+
+let watermarkPngCache = null;
+
+async function getWatermarkPng(browser) {
+  if (watermarkPngCache) return watermarkPngCache;
+
+  const page = await browser.newPage();
+  await page.setViewport({ width: 884, height: 718 });
+
+  const svgHtml = `<!DOCTYPE html>
+<html>
+<head>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; }
+  body { background: transparent; width: 884px; height: 718px; overflow: hidden; }
+  svg { width: 884px; height: 718px; }
+</style>
+</head>
+<body>${WATERMARK_SVG}</body>
+</html>`;
+
+  await page.setContent(svgHtml, { waitUntil: 'networkidle0', timeout: 30000 });
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await document.fonts.load('400 150px "Noto Naskh Arabic"');
+  });
+  await new Promise(r => setTimeout(r, 2000));
+
+  const png = await page.screenshot({
+    type: 'png',
+    clip: { x: 0, y: 0, width: 884, height: 718 },
+    omitBackground: true
+  });
+
+  await page.close();
+  watermarkPngCache = 'data:image/png;base64,' + png.toString('base64');
+  return watermarkPngCache;
+}
+
 async function renderPage(browser, url) {
   const page = await browser.newPage();
   page.setDefaultTimeout(120000);
@@ -15,16 +67,6 @@ async function renderPage(browser, url) {
     const timeout = setTimeout(resolve, 10000);
     Promise.all([
       document.fonts.ready,
-      // تحميل Noto Naskh Arabic صراحةً للواترمارك
-      new Promise(r => {
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = 'https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap';
-        link.onload = r;
-        link.onerror = r;
-        document.head.appendChild(link);
-        setTimeout(r, 3000);
-      }),
       new Promise(r => {
         const imgs = document.querySelectorAll('img');
         if (imgs.length === 0) return r();
@@ -38,21 +80,15 @@ async function renderPage(browser, url) {
     ]).then(() => { clearTimeout(timeout); resolve(); }).catch(resolve);
   }));
 
-  // انتظر إضافي للخطوط
-  await page.evaluate(async () => {
-    try {
-      await document.fonts.load('400 16px "Noto Naskh Arabic"');
-      await document.fonts.load('700 16px "Noto Naskh Arabic"');
-    } catch(e) {}
-  });
+  // احصل على الواترمارك PNG
+  const watermarkPng = await getWatermarkPng(browser);
 
-  await page.evaluate(() => {
+  await page.evaluate((wmPng) => {
     const original = window.exportPost;
     window.exportPost = async function() {
 
       const productImg = document.querySelector('#product-zone img');
       const productSrc = productImg ? productImg.src : null;
-      const wmSrc = document.getElementById('watermark-img')?.src || null;
 
       // أصلح الـ ✓
       const styleEl = document.createElement('style');
@@ -72,22 +108,19 @@ async function renderPage(browser, url) {
         el.insertBefore(svg, el.firstChild);
       });
 
-      // خفي صورة المنتج مؤقتاً
       if (productImg) productImg.style.visibility = 'hidden';
-
       const result = await original.call(this);
-
       if (productImg) productImg.style.visibility = '';
+
       document.getElementById('fix-before')?.remove();
       document.querySelectorAll('.check-svg').forEach(s => s.remove());
 
-      // Canvas نهائي
       const finalCanvas = document.createElement('canvas');
       finalCanvas.width = 2400;
       finalCanvas.height = 2400;
       const ctx = finalCanvas.getContext('2d');
 
-      // 1. ارسم الـ base (html2canvas result)
+      // 1. ارسم الـ base
       await new Promise(resolve => {
         const base = new Image();
         base.onload = () => { ctx.drawImage(base, 0, 0); resolve(); };
@@ -95,7 +128,7 @@ async function renderPage(browser, url) {
         base.src = result;
       });
 
-      // 2. ارسم صورة المنتج يدوياً
+      // 2. ارسم صورة المنتج
       if (productSrc) {
         await new Promise(resolve => {
           const img = new Image();
@@ -120,37 +153,26 @@ async function renderPage(browser, url) {
         });
       }
 
-      // 3. ارسم الواترمارك — نرسمه مرتين عشان الخط يتحمل
-      if (wmSrc) {
-        // أول مرة للتحميل
-        await new Promise(resolve => {
-          const wm = new Image();
-          wm.onload = () => resolve();
-          wm.onerror = resolve;
-          wm.src = wmSrc;
-        });
-
-        // ثاني مرة للرسم الفعلي
-        await new Promise(resolve => {
-          const wm = new Image();
-          wm.onload = () => {
-            const s = 4;
-            ctx.save();
-            ctx.globalAlpha = 0.07;
-            ctx.drawImage(wm, (300-202)*s, (300-128.5)*s, 540*s, 439*s);
-            ctx.restore();
-            resolve();
-          };
-          wm.onerror = resolve;
-          wm.src = wmSrc;
-        });
-      }
+      // 3. ارسم الواترمارك PNG
+      await new Promise(resolve => {
+        const wm = new Image();
+        wm.onload = () => {
+          const s = 4;
+          ctx.save();
+          ctx.globalAlpha = 0.07;
+          ctx.drawImage(wm, (300-202)*s, (300-128.5)*s, 540*s, 439*s);
+          ctx.restore();
+          resolve();
+        };
+        wm.onerror = resolve;
+        wm.src = wmPng;
+      });
 
       return finalCanvas.toDataURL('image/png');
     };
-  });
+  }, watermarkPng);
 
-  await new Promise(r => setTimeout(r, 4000));
+  await new Promise(r => setTimeout(r, 3000));
 
   const base64 = await page.evaluate(() => window.exportPost(), { timeout: 90000 });
   await page.close();
