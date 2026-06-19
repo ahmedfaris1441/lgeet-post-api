@@ -3,45 +3,16 @@ const puppeteer = require('puppeteer');
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 
-// الـ SVG الأصلي للواترمارك
-const WATERMARK_SVG = `<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 884 718" width="884" height="718">
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap');
-    tspan { white-space:pre }
-    .t0 { font-size: 150px;fill: #d2d2d2;font-weight: 400;font-family: "Noto Naskh Arabic", serif }
-  </style>
-  <text id="لگيت" style="transform: matrix(1.001,.003,-0.003,.895,-72.825,236.134)">
-    <tspan x="245.4" y="0" class="t0">لگيت
-</tspan>
-  </text>
-</svg>`;
-
 let watermarkPngCache = null;
 
-async function getWatermarkPng(browser) {
+async function getWatermarkPng(browser, wmSrc) {
   if (watermarkPngCache) return watermarkPngCache;
 
   const page = await browser.newPage();
   await page.setViewport({ width: 884, height: 718 });
 
-  const svgHtml = `<!DOCTYPE html>
-<html>
-<head>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap" rel="stylesheet">
-<style>
-  * { margin:0; padding:0; }
-  body { background: transparent; width: 884px; height: 718px; overflow: hidden; }
-  svg { width: 884px; height: 718px; }
-</style>
-</head>
-<body>${WATERMARK_SVG}</body>
-</html>`;
-
-  await page.setContent(svgHtml, { waitUntil: 'networkidle0', timeout: 30000 });
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-    await document.fonts.load('400 150px "Noto Naskh Arabic"');
-  });
+  // نفتح الـ SVG مباشرة كـ data URI
+  await page.goto(wmSrc, { waitUntil: 'networkidle0', timeout: 30000 });
   await new Promise(r => setTimeout(r, 2000));
 
   const png = await page.screenshot({
@@ -80,8 +51,13 @@ async function renderPage(browser, url) {
     ]).then(() => { clearTimeout(timeout); resolve(); }).catch(resolve);
   }));
 
-  // احصل على الواترمارك PNG
-  const watermarkPng = await getWatermarkPng(browser);
+  // احصل على الـ wmSrc من الصفحة
+  const wmSrc = await page.evaluate(() => {
+    return document.getElementById('watermark-img')?.src || null;
+  });
+
+  // حول الـ SVG لـ PNG باستخدام Puppeteer
+  const watermarkPng = wmSrc ? await getWatermarkPng(browser, wmSrc) : null;
 
   await page.evaluate((wmPng) => {
     const original = window.exportPost;
@@ -154,19 +130,21 @@ async function renderPage(browser, url) {
       }
 
       // 3. ارسم الواترمارك PNG
-      await new Promise(resolve => {
-        const wm = new Image();
-        wm.onload = () => {
-          const s = 4;
-          ctx.save();
-          ctx.globalAlpha = 0.07;
-          ctx.drawImage(wm, (300-202)*s, (300-128.5)*s, 540*s, 439*s);
-          ctx.restore();
-          resolve();
-        };
-        wm.onerror = resolve;
-        wm.src = wmPng;
-      });
+      if (wmPng) {
+        await new Promise(resolve => {
+          const wm = new Image();
+          wm.onload = () => {
+            const s = 4;
+            ctx.save();
+            ctx.globalAlpha = 0.07;
+            ctx.drawImage(wm, (300-202)*s, (300-128.5)*s, 540*s, 439*s);
+            ctx.restore();
+            resolve();
+          };
+          wm.onerror = resolve;
+          wm.src = wmPng;
+        });
+      }
 
       return finalCanvas.toDataURL('image/png');
     };
