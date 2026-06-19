@@ -12,7 +12,7 @@ async function renderPage(browser, url) {
 
   // انتظر الخطوط والصور
   await page.evaluate(() => new Promise((resolve) => {
-    const timeout = setTimeout(resolve, 8000);
+    const timeout = setTimeout(resolve, 10000);
     Promise.all([
       document.fonts.ready,
       new Promise(r => {
@@ -28,17 +28,37 @@ async function renderPage(browser, url) {
     ]).then(() => { clearTimeout(timeout); resolve(); }).catch(resolve);
   }));
 
-  // Override exportPost — نستخدم SVG للـ ✓ بدل نص
+  // Override exportPost
   await page.evaluate(() => {
     const original = window.exportPost;
     window.exportPost = async function() {
-      // أخفي ::before
+
+      // 1. أصلح صورة المنتج — نحول الـ img لـ canvas قبل html2canvas
+      const productImg = document.querySelector('#product-zone img');
+      if (productImg && productImg.src && !productImg.src.startsWith('data:')) {
+        await new Promise((resolve) => {
+          const tempCanvas = document.createElement('canvas');
+          const ctx = tempCanvas.getContext('2d');
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            tempCanvas.width = img.naturalWidth;
+            tempCanvas.height = img.naturalHeight;
+            ctx.drawImage(img, 0, 0);
+            productImg.src = tempCanvas.toDataURL('image/png');
+            resolve();
+          };
+          img.onerror = resolve;
+          img.src = productImg.src;
+        });
+      }
+
+      // 2. أصلح الـ ✓ — SVG بدل pseudo-element
       const styleEl = document.createElement('style');
       styleEl.id = 'fix-before';
       styleEl.textContent = '.info-feat::before { display: none !important; }';
       document.head.appendChild(styleEl);
 
-      // أضيف SVG checkmark بدل نص
       document.querySelectorAll('.info-feat').forEach(el => {
         if (el.querySelector('.check-svg')) return;
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -53,7 +73,7 @@ async function renderPage(browser, url) {
 
       const result = await original.call(this);
 
-      // نظّف
+      // تنظيف
       document.getElementById('fix-before')?.remove();
       document.querySelectorAll('.check-svg').forEach(s => s.remove());
 
@@ -63,7 +83,7 @@ async function renderPage(browser, url) {
 
   await new Promise(r => setTimeout(r, 3000));
 
-  const base64 = await page.evaluate(() => window.exportPost(), { timeout: 60000 });
+  const base64 = await page.evaluate(() => window.exportPost(), { timeout: 90000 });
   await page.close();
   return base64;
 }
