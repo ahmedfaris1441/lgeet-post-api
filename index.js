@@ -5,39 +5,36 @@ app.use(express.json({ limit: '50mb' }));
 
 async function renderPage(browser, url) {
   const page = await browser.newPage();
+
+  // زيادة الـ protocol timeout
+  page.setDefaultTimeout(120000);
+  page.setDefaultNavigationTimeout(120000);
+
   await page.setViewport({ width: 600, height: 600, deviceScaleFactor: 1 });
-  await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
+  await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
 
-  // 1. انتظر الخطوط بما فيها Noto Naskh للواترمارك
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-    await Promise.all([
-      document.fonts.load('400 16px Cairo'),
-      document.fonts.load('600 16px Cairo'),
-      document.fonts.load('700 16px Cairo'),
-      document.fonts.load('900 16px Cairo'),
-      document.fonts.load('400 16px "Noto Naskh Arabic"'),
-      document.fonts.load('700 16px "Noto Naskh Arabic"'),
-    ]).catch(() => {});
-  });
-
-  // 2. انتظر كل الصور بما فيها الواترمارك SVG
+  // انتظر الخطوط والصور مع timeout محدود
   await page.evaluate(() => new Promise((resolve) => {
-    const imgs = document.querySelectorAll('img');
-    if (imgs.length === 0) return resolve();
-    let loaded = 0;
-    const done = () => { loaded++; if (loaded === imgs.length) resolve(); };
-    imgs.forEach(img => {
-      if (img.complete && img.naturalWidth > 0) done();
-      else { img.onload = done; img.onerror = done; }
-    });
+    const timeout = setTimeout(resolve, 8000);
+    Promise.all([
+      document.fonts.ready,
+      new Promise(r => {
+        const imgs = document.querySelectorAll('img');
+        if (imgs.length === 0) return r();
+        let loaded = 0;
+        const done = () => { loaded++; if (loaded === imgs.length) r(); };
+        imgs.forEach(img => {
+          if (img.complete && img.naturalWidth > 0) done();
+          else { img.onload = done; img.onerror = done; }
+        });
+      })
+    ]).then(() => { clearTimeout(timeout); resolve(); }).catch(resolve);
   }));
 
-  // 3. حل مشكلة ::before — نعمل override لـ exportPost عشان نضيف الـ ✓ قبل html2canvas
+  // Override exportPost لإضافة الـ ✓ قبل html2canvas
   await page.evaluate(() => {
-    const originalExport = window.exportPost;
+    const original = window.exportPost;
     window.exportPost = async function() {
-      // أخفي ::before وأضيف span حقيقي
       const styleEl = document.createElement('style');
       styleEl.id = 'fix-before';
       styleEl.textContent = '.info-feat::before { display: none !important; }';
@@ -52,9 +49,8 @@ async function renderPage(browser, url) {
         el.insertBefore(span, el.firstChild);
       });
 
-      const result = await originalExport.call(this);
+      const result = await original.call(this);
 
-      // نظّف بعد الـ export
       document.getElementById('fix-before')?.remove();
       document.querySelectorAll('.check-span').forEach(s => s.remove());
 
@@ -62,10 +58,9 @@ async function renderPage(browser, url) {
     };
   });
 
-  // 4. انتظر إضافي للـ render الكامل
-  await new Promise(r => setTimeout(r, 4000));
+  await new Promise(r => setTimeout(r, 3000));
 
-  const base64 = await page.evaluate(() => window.exportPost());
+  const base64 = await page.evaluate(() => window.exportPost(), { timeout: 60000 });
   await page.close();
   return base64;
 }
@@ -78,6 +73,7 @@ app.post('/generate-post', async (req, res) => {
 
     const browser = await puppeteer.launch({
       headless: 'new',
+      protocolTimeout: 180000,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     });
 
