@@ -32,28 +32,12 @@ async function renderPage(browser, url) {
     const original = window.exportPost;
     window.exportPost = async function() {
 
-      // 1. حول صورة المنتج لـ base64 محلي عشان html2canvas يشوفها
+      // احفظ بيانات مهمة قبل الـ export
       const productImg = document.querySelector('#product-zone img');
-      if (productImg && productImg.src && !productImg.src.startsWith('data:')) {
-        await new Promise((resolve) => {
-          const c = document.createElement('canvas');
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            c.width = img.naturalWidth;
-            c.height = img.naturalHeight;
-            c.getContext('2d').drawImage(img, 0, 0);
-            try { productImg.src = c.toDataURL('image/png'); } catch(e){}
-            resolve();
-          };
-          img.onerror = resolve;
-          img.src = productImg.src + (productImg.src.includes('?') ? '&' : '?') + 't=' + Date.now();
-        });
-        // انتظر إضافي للصورة تتحدث
-        await new Promise(r => setTimeout(r, 500));
-      }
+      const productSrc = productImg ? productImg.src : null;
+      const wmSrc = document.getElementById('watermark-img')?.src || null;
 
-      // 2. أصلح الـ ✓
+      // أصلح الـ ✓
       const styleEl = document.createElement('style');
       styleEl.id = 'fix-before';
       styleEl.textContent = '.info-feat::before { display: none !important; }';
@@ -71,33 +55,65 @@ async function renderPage(browser, url) {
         el.insertBefore(svg, el.firstChild);
       });
 
-      // 3. احفظ الواترمارك src قبل ما exportPost يخفيه
-      const wmEl = document.getElementById('watermark-img');
-      const wmSrc = wmEl ? wmEl.src : null;
+      // خفي صورة المنتج مؤقتاً عشان html2canvas ما يرسمها غلط
+      if (productImg) productImg.style.visibility = 'hidden';
 
-      // 4. شغّل الـ exportPost الأصلي
+      // شغّل الـ exportPost الأصلي (بدون صورة المنتج)
       const result = await original.call(this);
+
+      // رجّع الصورة
+      if (productImg) productImg.style.visibility = '';
 
       // تنظيف
       document.getElementById('fix-before')?.remove();
       document.querySelectorAll('.check-svg').forEach(s => s.remove());
 
-      // 5. أضيف الواترمارك يدوياً على الـ canvas النهائي
-      if (wmSrc && result) {
-        const finalCanvas = document.createElement('canvas');
-        finalCanvas.width = 2400;
-        finalCanvas.height = 2400;
-        const ctx = finalCanvas.getContext('2d');
+      // الحين ارسم كل شي يدوياً على canvas نهائي
+      const finalCanvas = document.createElement('canvas');
+      finalCanvas.width = 2400;
+      finalCanvas.height = 2400;
+      const ctx = finalCanvas.getContext('2d');
 
-        // ارسم الصورة الأصلية
+      // 1. ارسم الـ html2canvas result (بدون صورة المنتج)
+      await new Promise(resolve => {
+        const base = new Image();
+        base.onload = () => { ctx.drawImage(base, 0, 0); resolve(); };
+        base.onerror = resolve;
+        base.src = result;
+      });
+
+      // 2. ارسم صورة المنتج يدوياً في المنتصف بحجم صح
+      if (productSrc) {
         await new Promise(resolve => {
-          const base = new Image();
-          base.onload = () => { ctx.drawImage(base, 0, 0); resolve(); };
-          base.onerror = resolve;
-          base.src = result;
-        });
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            // product-zone: top:50% left:50% width:400px height:400px
+            // scale:4 → 1600x1600, centered at (1200,1200)
+            const s = 4;
+            const zoneSize = 400 * s; // 1600
+            const cx = 300 * s; // 1200
+            const cy = 300 * s; // 1200
+            const zoneX = cx - zoneSize / 2; // 400
+            const zoneY = cy - zoneSize / 2; // 400
 
-        // ارسم الواترمارك
+            // object-fit: contain
+            const ratio = Math.min(zoneSize / img.naturalWidth, zoneSize / img.naturalHeight);
+            const dw = img.naturalWidth * ratio;
+            const dh = img.naturalHeight * ratio;
+            const dx = zoneX + (zoneSize - dw) / 2;
+            const dy = zoneY + (zoneSize - dh) / 2;
+
+            ctx.drawImage(img, dx, dy, dw, dh);
+            resolve();
+          };
+          img.onerror = resolve;
+          img.src = productSrc;
+        });
+      }
+
+      // 3. ارسم الواترمارك يدوياً
+      if (wmSrc) {
         await new Promise(resolve => {
           const wm = new Image();
           wm.onload = () => {
@@ -111,11 +127,9 @@ async function renderPage(browser, url) {
           wm.onerror = resolve;
           wm.src = wmSrc;
         });
-
-        return finalCanvas.toDataURL('image/png');
       }
 
-      return result;
+      return finalCanvas.toDataURL('image/png');
     };
   });
 
