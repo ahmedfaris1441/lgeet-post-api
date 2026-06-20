@@ -14,7 +14,7 @@ async function getWatermarkPng(browser) {
   const html = `<!DOCTYPE html>
 <html>
 <head>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&family=Cairo:wght@400;700;900&family=Vazirmatn:wght@400;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&family=Cairo:wght@400;700;900&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
 <style>
 * { margin:0; padding:0; }
 body { background: transparent; width: 884px; height: 718px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
@@ -28,7 +28,7 @@ async function draw() {
   await document.fonts.ready;
   // جرب تحمل خط Cairo
   try {
-    await document.fonts.load('900 150px Vazirmatn');
+    await document.fonts.load('700 150px Amiri');
     await document.fonts.load('900 150px Cairo');
     await document.fonts.load('400 150px "Noto Naskh Arabic"');
   } catch(e) {}
@@ -38,7 +38,7 @@ async function draw() {
   
   // ارسم النص
   ctx.save();
-  ctx.font = '900 150px Vazirmatn, Cairo, "Noto Naskh Arabic", Arial, sans-serif';
+  ctx.font = '700 150px Amiri, Cairo, "Noto Naskh Arabic", Arial, sans-serif';
   ctx.fillStyle = '#d2d2d2';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
