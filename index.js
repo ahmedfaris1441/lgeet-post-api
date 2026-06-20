@@ -5,14 +5,59 @@ app.use(express.json({ limit: '50mb' }));
 
 let watermarkPngCache = null;
 
-async function getWatermarkPng(browser, wmSrc) {
+async function getWatermarkPng(browser) {
   if (watermarkPngCache) return watermarkPngCache;
 
   const page = await browser.newPage();
   await page.setViewport({ width: 884, height: 718 });
 
-  // نفتح الـ SVG مباشرة كـ data URI
-  await page.goto(wmSrc, { waitUntil: 'networkidle0', timeout: 30000 });
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; }
+body { background: transparent; width: 884px; height: 718px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+canvas { display:block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="884" height="718"></canvas>
+<script>
+async function draw() {
+  await document.fonts.ready;
+  // جرب تحمل خط Cairo
+  try {
+    await document.fonts.load('900 150px Cairo');
+    await document.fonts.load('400 150px "Noto Naskh Arabic"');
+  } catch(e) {}
+  
+  const c = document.getElementById('c');
+  const ctx = c.getContext('2d');
+  
+  // ارسم النص
+  ctx.save();
+  ctx.font = '900 150px Cairo, "Noto Naskh Arabic", Arial, sans-serif';
+  ctx.fillStyle = '#d2d2d2';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  // نفس الـ transform من الـ SVG الأصلي
+  ctx.setTransform(1.001, 0.003, -0.003, 0.895, -72.825 + 442, 236.134);
+  ctx.fillText('لگيت', 0, 0);
+  ctx.restore();
+  
+  document.title = 'done';
+}
+draw();
+</script>
+</body>
+</html>`;
+
+  await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+  
+  // انتظر حتى يخلص الرسم
+  await page.waitForFunction(() => document.title === 'done', { timeout: 10000 }).catch(() => {});
   await new Promise(r => setTimeout(r, 2000));
 
   const png = await page.screenshot({
@@ -33,7 +78,6 @@ async function renderPage(browser, url) {
   await page.setViewport({ width: 600, height: 600, deviceScaleFactor: 1 });
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
 
-  // انتظر الخطوط والصور
   await page.evaluate(() => new Promise((resolve) => {
     const timeout = setTimeout(resolve, 10000);
     Promise.all([
@@ -51,13 +95,7 @@ async function renderPage(browser, url) {
     ]).then(() => { clearTimeout(timeout); resolve(); }).catch(resolve);
   }));
 
-  // احصل على الـ wmSrc من الصفحة
-  const wmSrc = await page.evaluate(() => {
-    return document.getElementById('watermark-img')?.src || null;
-  });
-
-  // حول الـ SVG لـ PNG باستخدام Puppeteer
-  const watermarkPng = wmSrc ? await getWatermarkPng(browser, wmSrc) : null;
+  const watermarkPng = await getWatermarkPng(browser);
 
   await page.evaluate((wmPng) => {
     const original = window.exportPost;
@@ -129,7 +167,7 @@ async function renderPage(browser, url) {
         });
       }
 
-      // 3. ارسم الواترمارك PNG
+      // 3. ارسم الواترمارك
       if (wmPng) {
         await new Promise(resolve => {
           const wm = new Image();
