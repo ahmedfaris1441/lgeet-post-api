@@ -3,10 +3,6 @@ const puppeteer = require('puppeteer');
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 
-let watermarkPngCache = null;
-
-async function getWatermarkPng(browser) {
-  if (watermarkPngCache) return watermarkPngCache;
 
   const page = await browser.newPage();
   await page.setViewport({ width: 884, height: 718 });
@@ -96,9 +92,8 @@ async function renderPage(browser, url) {
     ]).then(() => { clearTimeout(timeout); resolve(); }).catch(resolve);
   }));
 
-  const watermarkPng = await getWatermarkPng(browser);
 
-  await page.evaluate((wmPng) => {
+  await page.evaluate(() => {
     const original = window.exportPost;
     window.exportPost = async function() {
 
@@ -168,26 +163,11 @@ async function renderPage(browser, url) {
         });
       }
 
-      // 3. ارسم الواترمارك
-      if (wmPng) {
-        await new Promise(resolve => {
-          const wm = new Image();
-          wm.onload = () => {
-            const s = 4;
-            ctx.save();
-            ctx.globalAlpha = 0.07;
-            ctx.drawImage(wm, (300-202)*s, (300-128.5)*s, 540*s, 439*s);
-            ctx.restore();
-            resolve();
-          };
-          wm.onerror = resolve;
-          wm.src = wmPng;
-        });
-      }
+    
 
       return finalCanvas.toDataURL('image/png');
     };
-  }, watermarkPng);
+  },);
 
   await new Promise(r => setTimeout(r, 3000));
 
