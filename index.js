@@ -10,33 +10,36 @@ async function renderPage(browser, url) {
   await page.setViewport({ width: 600, height: 600, deviceScaleFactor: 1 });
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
 
-  // حقن التعديل لزيادة حجم المنتج بنسبة 7% مباشرة في القالب
+  // حقن التعديل البصري (تكبير 5% لتيك توك فقط)
   await page.addStyleTag({
     content: `
-      #product-zone img {
-        transform: scale(1.07) !important;
-        transform-origin: center center !important;
-        transition: none !important;
-      }
       .info-feat::before { display: none !important; }
+      /* تكبير المنتج في تيك توك بنسبة 5% فقط مع الحفاظ على التمركز */
+      ${url.includes('tiktok') ? `
+        #product-zone img {
+          transform: scale(1.05) !important;
+          transform-origin: center center !important;
+          transition: none !important;
+        }
+      ` : ''}
     `
   });
 
   await page.evaluate(() => new Promise((resolve) => {
     const timeout = setTimeout(resolve, 10000);
-    // إضافة الـ Check SVG برمجياً كما طلبت
+    // إضافة الـ Check SVG
     document.querySelectorAll('.info-feat').forEach(el => {
-        if (el.querySelector('.check-svg')) return;
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', '11');
-        svg.setAttribute('height', '11');
-        svg.setAttribute('viewBox', '0 0 12 12');
-        svg.classList.add('check-svg');
-        svg.style.cssText = 'display:inline-block;vertical-align:middle;margin-right:3px;flex-shrink:0;';
-        svg.innerHTML = '<polyline points="2,6 5,9 10,3" fill="none" stroke="#7fa8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-        el.insertBefore(svg, el.firstChild);
+      if (el.querySelector('.check-svg')) return;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', '11');
+      svg.setAttribute('height', '11');
+      svg.setAttribute('viewBox', '0 0 12 12');
+      svg.classList.add('check-svg');
+      svg.style.cssText = 'display:inline-block;vertical-align:middle;margin-right:3px;flex-shrink:0;';
+      svg.innerHTML = '<polyline points="2,6 5,9 10,3" fill="none" stroke="#7fa8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+      el.insertBefore(svg, el.firstChild);
     });
-    
+
     Promise.all([
       document.fonts.ready,
       new Promise(r => {
@@ -52,9 +55,7 @@ async function renderPage(browser, url) {
     ]).then(() => { clearTimeout(timeout); resolve(); }).catch(resolve);
   }));
 
-  // استدعاء دالة التصدير الأصلية الموجودة في القالب (وهي تقوم بالعمل بالكامل)
   const base64 = await page.evaluate(() => window.exportPost());
-  
   await page.close();
   return base64;
 }
