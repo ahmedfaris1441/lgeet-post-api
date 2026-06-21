@@ -14,48 +14,35 @@ async function renderPage(browser, url) {
   await page.addStyleTag({
     content: `
       .info-feat::before { display: none !important; }
-      /* تكبير المنتج في تيك توك بنسبة 5% فقط مع الحفاظ على التمركز */
       ${url.includes('tiktok') ? `
         #product-zone img {
           transform: scale(1.05) !important;
           transform-origin: center center !important;
-          transition: none !important;
         }
       ` : ''}
     `
   });
 
-  await page.evaluate(() => new Promise((resolve) => {
-    const timeout = setTimeout(resolve, 10000);
-    // إضافة الـ Check SVG
+  // تنفيذ التصدير مباشرة من القالب (بدون تدخل يدوي يغير الحجم)
+  const base64 = await page.evaluate(async () => {
+    // التأكد من إضافة الـ SVG
     document.querySelectorAll('.info-feat').forEach(el => {
-      if (el.querySelector('.check-svg')) return;
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('width', '11');
-      svg.setAttribute('height', '11');
-      svg.setAttribute('viewBox', '0 0 12 12');
-      svg.classList.add('check-svg');
-      svg.style.cssText = 'display:inline-block;vertical-align:middle;margin-right:3px;flex-shrink:0;';
-      svg.innerHTML = '<polyline points="2,6 5,9 10,3" fill="none" stroke="#7fa8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
-      el.insertBefore(svg, el.firstChild);
+      if (!el.querySelector('.check-svg')) {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '11');
+        svg.setAttribute('height', '11');
+        svg.setAttribute('viewBox', '0 0 12 12');
+        svg.classList.add('check-svg');
+        svg.style.cssText = 'display:inline-block;vertical-align:middle;margin-right:3px;flex-shrink:0;';
+        svg.innerHTML = '<polyline points="2,6 5,9 10,3" fill="none" stroke="#7fa8ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+        el.insertBefore(svg, el.firstChild);
+      }
     });
 
-    Promise.all([
-      document.fonts.ready,
-      new Promise(r => {
-        const imgs = document.querySelectorAll('img');
-        if (imgs.length === 0) return r();
-        let loaded = 0;
-        const done = () => { loaded++; if (loaded === imgs.length) r(); };
-        imgs.forEach(img => {
-          if (img.complete && img.naturalWidth > 0) done();
-          else { img.onload = done; img.onerror = done; }
-        });
-      })
-    ]).then(() => { clearTimeout(timeout); resolve(); }).catch(resolve);
-  }));
+    // استدعاء دالة التصدير الأصلية في القالب
+    return await window.exportPost();
+  });
 
-  const base64 = await page.evaluate(() => window.exportPost());
   await page.close();
   return base64;
 }
