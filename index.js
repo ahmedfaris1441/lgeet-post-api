@@ -4,7 +4,6 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 
 
-  const page = await browser.newPage();
   await page.setViewport({ width: 884, height: 718 });
 
   const html = `<!DOCTYPE html>
