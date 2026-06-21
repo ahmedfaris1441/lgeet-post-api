@@ -62,9 +62,12 @@ async function renderPage(browser, url) {
       document.getElementById('fix-before')?.remove();
       document.querySelectorAll('.check-svg').forEach(s => s.remove());
 
+// Check which template is running
+      const isTikTok = window.location.href.includes('tiktok');
+
       const finalCanvas = document.createElement('canvas');
-      finalCanvas.width = 2400;
-      finalCanvas.height = 2400;
+      finalCanvas.width = isTikTok ? 1080 : 2400;
+      finalCanvas.height = isTikTok ? 1920 : 2400;
       const ctx = finalCanvas.getContext('2d');
 
       // 1. ارسم الـ base
@@ -81,10 +84,21 @@ async function renderPage(browser, url) {
           const img = new Image();
           img.crossOrigin = 'anonymous';
           img.onload = () => {
-            const s = 4;
-            const zoneSize = 400 * s;
-            const cx = 300 * s;
-            const cy = 300 * s;
+            let zoneSize, cx, cy;
+
+            if (isTikTok) {
+                // TIKTOK TEMPLATE (Bigger product, perfect centering)
+                zoneSize = 850; // Increased size so the product doesn't look stupidly small
+                cx = 540;       // Perfect center horizontally (1080 / 2)
+                cy = 760;       // Perfect center vertically for the product zone
+            } else {
+                // INSTAGRAM TEMPLATE (100% UNTOUCHED)
+                const s = 4;
+                zoneSize = 400 * s; // 1600
+                cx = 300 * s;       // 1200
+                cy = 300 * s;       // 1200
+            }
+
             const zoneX = cx - zoneSize / 2;
             const zoneY = cy - zoneSize / 2;
             const ratio = Math.min(zoneSize / img.naturalWidth, zoneSize / img.naturalHeight);
