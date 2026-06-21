@@ -4,68 +4,6 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 
 
-  await page.setViewport({ width: 884, height: 718 });
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&family=Cairo:wght@400;700;900&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
-<style>
-* { margin:0; padding:0; }
-body { background: transparent; width: 884px; height: 718px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-canvas { display:block; }
-</style>
-</head>
-<body>
-<canvas id="c" width="884" height="718"></canvas>
-<script>
-async function draw() {
-  await document.fonts.ready;
-  // جرب تحمل خط Cairo
-  try {
-    await document.fonts.load('700 150px Amiri');
-    await document.fonts.load('900 150px Cairo');
-    await document.fonts.load('400 150px "Noto Naskh Arabic"');
-  } catch(e) {}
-  
-  const c = document.getElementById('c');
-  const ctx = c.getContext('2d');
-  
-  // ارسم النص
-  ctx.save();
-  ctx.font = '700 150px Amiri, Cairo, "Noto Naskh Arabic", Arial, sans-serif';
-  ctx.fillStyle = '#d2d2d2';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  
-  // نفس الـ transform من الـ SVG الأصلي
-  ctx.setTransform(1.001, 0.003, -0.003, 0.895, -72.825 + 442, 236.134);
-  ctx.fillText('لگيت', 0, 0);
-  ctx.restore();
-  
-  document.title = 'done';
-}
-draw();
-</script>
-</body>
-</html>`;
-
-  await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
-  
-  // انتظر حتى يخلص الرسم
-  await page.waitForFunction(() => document.title === 'done', { timeout: 10000 }).catch(() => {});
-  await new Promise(r => setTimeout(r, 2000));
-
-  const png = await page.screenshot({
-    type: 'png',
-    clip: { x: 0, y: 0, width: 884, height: 718 },
-    omitBackground: true
-  });
-
-  await page.close();
-  watermarkPngCache = 'data:image/png;base64,' + png.toString('base64');
-  return watermarkPngCache;
-}
 
 async function renderPage(browser, url) {
   const page = await browser.newPage();
