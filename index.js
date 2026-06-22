@@ -8,26 +8,38 @@ async function renderPage(browser, url) {
   page.setDefaultTimeout(120000);
   page.setDefaultNavigationTimeout(120000);
 
-  // ✅ FIX: match viewport to each template's actual dimensions
+  // ✅ FIX 1: viewport must match each template's real dimensions
   const isTikTok = url.includes('tiktok');
   await page.setViewport({
-    width:           isTikTok ? 675  : 600,
-    height:          isTikTok ? 1200 : 600,
+    width:             isTikTok ? 675  : 600,
+    height:            isTikTok ? 1200 : 600,
     deviceScaleFactor: 1
   });
 
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
 
-  // حقن التعديل البصري (تكبير 5% لتيك توك فقط)
+  // ✅ FIX 2: inject CSS that forces UNIFORM scaling on the product image.
+  //    - We replace width:100%;height:100% with max-width/max-height + auto
+  //    - This guarantees the browser respects the image's natural aspect ratio
+  //    - No axis is ever stretched independently
   await page.addStyleTag({
     content: `
       .info-feat::before { display: none !important; }
-      ${isTikTok ? `
-        #product-zone img {
-          transform: scale(1.05) !important;
-          transform-origin: center center !important;
-        }
-      ` : ''}
+
+      /* ── CORE FIX: preserve original aspect ratio on every platform ── */
+      #product-zone {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+      #product-zone img {
+        width: auto !important;
+        height: auto !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        object-fit: contain !important;
+        display: block !important;
+      }
     `
   });
 
@@ -47,7 +59,28 @@ async function renderPage(browser, url) {
       }
     });
 
-    // استدعاء دالة التصدير الأصلية في القالب
+    // ✅ FIX 3: before exporting, verify the product image is loaded at its
+    //    natural dimensions and has not been stretched on either axis.
+    const productImg = document.querySelector('#product-zone img');
+    if (productImg && productImg.complete && productImg.naturalWidth > 0) {
+      const zone      = document.getElementById('product-zone');
+      const zoneW     = zone.offsetWidth;
+      const zoneH     = zone.offsetHeight;
+      const natW      = productImg.naturalWidth;
+      const natH      = productImg.naturalHeight;
+
+      // Compute uniform scale that fits inside the zone (contain logic, explicit)
+      const scale     = Math.min(zoneW / natW, zoneH / natH);
+      const drawW     = natW * scale;
+      const drawH     = natH * scale;
+
+      // Apply explicit pixel dimensions so html2canvas cannot distort them
+      productImg.style.width  = drawW + 'px';
+      productImg.style.height = drawH + 'px';
+      productImg.style.maxWidth  = 'none';
+      productImg.style.maxHeight = 'none';
+    }
+
     return await window.exportPost();
   });
 
@@ -68,7 +101,7 @@ app.post('/generate-post', async (req, res) => {
     const query = `name=${encodeURIComponent(name || '')}&price=${encodeURIComponent(price || '')}&feat1=${encodeURIComponent(feature1 || '')}&feat2=${encodeURIComponent(feature2 || '')}&feat3=${encodeURIComponent(feature3 || '')}&image=${encodeURIComponent(image || '')}`;
 
     const instagramBase64 = await renderPage(browser, `${baseUrl}/lgeet-temp-instagram?${query}`);
-    const tiktokBase64 = await renderPage(browser, `${baseUrl}/lgeet-temp-tiktok?${query}`);
+    const tiktokBase64    = await renderPage(browser, `${baseUrl}/lgeet-temp-tiktok?${query}`);
 
     await browser.close();
     res.json({ success: true, instagram: instagramBase64, tiktok: tiktokBase64 });
