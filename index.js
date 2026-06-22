@@ -7,14 +7,22 @@ async function renderPage(browser, url) {
   const page = await browser.newPage();
   page.setDefaultTimeout(120000);
   page.setDefaultNavigationTimeout(120000);
-  await page.setViewport({ width: 600, height: 600, deviceScaleFactor: 1 });
+
+  // ✅ FIX: match viewport to each template's actual dimensions
+  const isTikTok = url.includes('tiktok');
+  await page.setViewport({
+    width:           isTikTok ? 675  : 600,
+    height:          isTikTok ? 1200 : 600,
+    deviceScaleFactor: 1
+  });
+
   await page.goto(url, { waitUntil: 'networkidle0', timeout: 90000 });
 
   // حقن التعديل البصري (تكبير 5% لتيك توك فقط)
   await page.addStyleTag({
     content: `
       .info-feat::before { display: none !important; }
-      ${url.includes('tiktok') ? `
+      ${isTikTok ? `
         #product-zone img {
           transform: scale(1.05) !important;
           transform-origin: center center !important;
