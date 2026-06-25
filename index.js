@@ -1,10 +1,48 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 
+// ── Uploads directory setup ──────────────────────────────────────────────────
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Serve uploaded files publicly
+app.use('/uploads', express.static(UPLOADS_DIR));
+
+// ── Multer configuration ─────────────────────────────────────────────────────
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOADS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const uniqueName = crypto.randomUUID() + ext;
+    cb(null, uniqueName);
+  }
+});
+
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      return cb(new Error('Only image files are accepted'), false);
+    }
+    cb(null, true);
+  }
+});
+
+// ── Existing state ───────────────────────────────────────────────────────────
 let lastTemplate = null;
 
+// ── Existing helper ───────────────────────────────────────────────────────────
 async function renderPage(browser, url) {
   const page = await browser.newPage();
   page.setDefaultTimeout(120000);
@@ -90,6 +128,27 @@ async function renderPage(browser, url) {
   return base64;
 }
 
+// ── NEW: Generic image upload endpoint ───────────────────────────────────────
+app.post('/upload', (req, res) => {
+  upload.single('image')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    if (err) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No image provided. Send a file under the field name "image".' });
+    }
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const url = `${baseUrl}/uploads/${req.file.filename}`;
+
+    return res.json({ success: true, url });
+  });
+});
+
+// ── Existing endpoints (unchanged) ───────────────────────────────────────────
 app.post('/generate-post', async (req, res) => {
   try {
     const { image, name, feature1, feature2, feature3, price } = req.body;
@@ -143,5 +202,49 @@ app.get('/last-template', (req, res) => {
     createdAt: lastTemplate.createdAt
   });
 });
+
+// ── Automatic uploads cleanup ────────────────────────────────────────────────
+// Runs every hour. Deletes files older than 24 hours. Never crashes the server.
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;      // 1 hour
+const MAX_FILE_AGE_MS     = 24 * 60 * 60 * 1000; // 24 hours
+
+function cleanupUploads() {
+  fs.readdir(UPLOADS_DIR, (readErr, files) => {
+    if (readErr) {
+      // Directory unreadable — skip this cycle silently
+      return;
+    }
+
+    const now = Date.now();
+
+    files.forEach((filename) => {
+      const filepath = path.join(UPLOADS_DIR, filename);
+
+      fs.stat(filepath, (statErr, stats) => {
+        if (statErr) {
+          // File may have already been deleted or is inaccessible — ignore
+          return;
+        }
+
+        const ageMs = now - stats.mtimeMs;
+
+        if (ageMs > MAX_FILE_AGE_MS) {
+          fs.unlink(filepath, (unlinkErr) => {
+            if (unlinkErr) {
+              // Could not delete — skip silently, never crash
+              return;
+            }
+            console.log(`[cleanup] Deleted expired upload: ${filename}`);
+          });
+        }
+      });
+    });
+  });
+}
+
+// Run once at startup to clear any leftovers from a previous process,
+// then repeat every hour.
+cleanupUploads();
+setInterval(cleanupUploads, CLEANUP_INTERVAL_MS);
 
 app.listen(3000, () => console.log('Server running on port 3000'));
