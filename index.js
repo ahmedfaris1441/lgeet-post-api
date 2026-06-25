@@ -3,6 +3,8 @@ const puppeteer = require('puppeteer');
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 
+let lastTemplate = null;
+
 async function renderPage(browser, url) {
   const page = await browser.newPage();
   page.setDefaultTimeout(120000);
@@ -104,10 +106,42 @@ app.post('/generate-post', async (req, res) => {
     const tiktokBase64    = await renderPage(browser, `${baseUrl}/lgeet-temp-tiktok?${query}`);
 
     await browser.close();
+
+    lastTemplate = {
+      instagram: instagramBase64,
+      tiktok: tiktokBase64,
+      createdAt: Date.now()
+    };
+
     res.json({ success: true, instagram: instagramBase64, tiktok: tiktokBase64 });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+app.post('/save-last-template', (req, res) => {
+  const { instagram, tiktok } = req.body;
+  if (!instagram || !tiktok) {
+    return res.status(400).json({ success: false });
+  }
+  lastTemplate = {
+    instagram,
+    tiktok,
+    createdAt: Date.now()
+  };
+  res.json({ success: true });
+});
+
+app.get('/last-template', (req, res) => {
+  if (!lastTemplate) {
+    return res.status(404).json({ success: false, message: 'No template available' });
+  }
+  res.json({
+    success: true,
+    instagram: lastTemplate.instagram,
+    tiktok: lastTemplate.tiktok,
+    createdAt: lastTemplate.createdAt
+  });
 });
 
 app.listen(3000, () => console.log('Server running on port 3000'));
