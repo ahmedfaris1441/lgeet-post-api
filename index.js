@@ -6,6 +6,11 @@ const path = require('path');
 const crypto = require('crypto');
 
 const app = express();
+
+// Railway (وأي Reverse Proxy) يمرر البروتوكول الحقيقي عبر x-forwarded-proto.
+// بدون هذا الإعداد يقرأ Express دائماً "http" بدلاً من "https".
+app.set('trust proxy', true);
+
 app.use(express.json({ limit: '50mb' }));
 
 // ── Uploads directory setup ──────────────────────────────────────────────────
@@ -141,8 +146,11 @@ app.post('/upload', (req, res) => {
       return res.status(400).json({ success: false, error: 'No image provided. Send a file under the field name "image".' });
     }
 
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const url = `${baseUrl}/uploads/${req.file.filename}`;
+    // نقرأ البروتوكول من x-forwarded-proto إن وُجد (Railway يضبطه على https).
+    // إذا لم يكن موجوداً نفرض https كقيمة افتراضية آمنة.
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const baseUrl  = `${protocol}://${req.get('host')}`;
+    const url      = `${baseUrl}/uploads/${req.file.filename}`;
 
     return res.json({ success: true, url });
   });
