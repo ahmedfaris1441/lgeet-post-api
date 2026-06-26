@@ -156,7 +156,7 @@ app.post('/upload', (req, res) => {
   });
 });
 
-// ── Existing endpoints (with modified payload) ───────────────────────────────
+// ── Existing endpoints (unchanged) ───────────────────────────────────────────
 app.post('/generate-post', async (req, res) => {
   try {
     const { image, name, feature1, feature2, feature3, price } = req.body;
@@ -180,13 +180,7 @@ app.post('/generate-post', async (req, res) => {
       createdAt: Date.now()
     };
 
-    res.json({ 
-      success: true, 
-      instagram: instagramBase64, 
-      tiktok: tiktokBase64,
-      instagram_raw: instagramBase64.replace(/^data:image\/\w+;base64,/, ""),
-      tiktok_raw: tiktokBase64.replace(/^data:image\/\w+;base64,/, "")
-    });
+    res.json({ success: true, instagram: instagramBase64, tiktok: tiktokBase64 });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -213,8 +207,6 @@ app.get('/last-template', (req, res) => {
     success: true,
     instagram: lastTemplate.instagram,
     tiktok: lastTemplate.tiktok,
-    instagram_raw: lastTemplate.instagram.replace(/^data:image\/\w+;base64,/, ""),
-    tiktok_raw: lastTemplate.tiktok.replace(/^data:image\/\w+;base64,/, ""),
     createdAt: lastTemplate.createdAt
   });
 });
