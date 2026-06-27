@@ -34,11 +34,13 @@ const storage = multer.diskStorage({
   }
 });
 
+const ALLOWED_MIMETYPES = new Set(['video/mp4']);
+
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith('image/')) {
-      return cb(new Error('Only image files are accepted'), false);
+    if (!file.mimetype.startsWith('image/') && !ALLOWED_MIMETYPES.has(file.mimetype)) {
+      return cb(new Error('Only image files (JPG, JPEG, PNG, WEBP) and MP4 videos are accepted'), false);
     }
     cb(null, true);
   }
